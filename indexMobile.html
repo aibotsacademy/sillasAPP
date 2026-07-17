@@ -201,12 +201,29 @@
 
         /* Bloquea el scroll del body cuando el modal de Horas Extra está abierto,
            esto evita que la pantalla "salte" en mobile */
+/* Bloquea el scroll del body cuando el modal de Horas Extra está abierto,
+           esto evita que la pantalla "salte" en mobile. Se bloquea html Y body
+           porque en iOS Safari bloquear solo el body no evita el rubber-banding
+           del documento raíz. */
+        html.he-lock,
+        body.he-lock {
+            overflow: hidden;
+            height: 100%;
+            overscroll-behavior: none;
+        }
         body.he-lock {
             position: fixed;
             left: 0;
             right: 0;
             width: 100%;
-            overflow: hidden;
+            touch-action: none;
+        }
+        .he-overlay {
+            touch-action: none;
+        }
+        .he-modal {
+            touch-action: pan-y;
+            overscroll-behavior: contain;
         }
 
 .he-justificacion-block { display: none; margin-top: 4px; }
@@ -446,10 +463,11 @@
                 </div>
 
                 <!-- Campos comunes: fecha y horas -->
-                <div style="margin: 16px 0;">
+<div style="margin: 16px 0;">
                     <label>Fecha</label>
-                    <input type="date" id="heFecha" class="input-field">
+                    <input type="date" id="heFecha" class="input-field" onchange="validateFechaHE()" oninput="validateFechaHE()">
                 </div>
+                
                 <div class="he-field-row" style="margin: 16px 0;">
                     <div>
                         <label>Hora Inicio</label>
@@ -721,7 +739,7 @@
             return `${y}-${m}-${day}`;
         }
 
-        function setDefaultFechaHE() {
+function setDefaultFechaHE() {
             const hoy = new Date();
             const ayer = new Date(hoy);
             ayer.setDate(hoy.getDate() - 1);
@@ -735,15 +753,34 @@
             fechaInput.value = hoyStr;
         }
 
+        // Refuerzo para mobile: algunos navegadores (Android WebView, apps in-app)
+        // no respetan visualmente min/max del picker nativo. Esta función corrige
+        // el valor apenas el usuario selecciona algo fuera de rango.
+        function validateFechaHE() {
+            const fechaInput = document.getElementById('heFecha');
+            const val = fechaInput.value;
+            if (!val) return;
+
+            if (fechaInput.min && val < fechaInput.min) {
+                fechaInput.value = fechaInput.min;
+                alert('Solo puedes registrar horas extra de hoy o ayer');
+            } else if (fechaInput.max && val > fechaInput.max) {
+                fechaInput.value = fechaInput.max;
+                alert('Solo puedes registrar horas extra de hoy o ayer');
+            }
+            calcularDuracionHE();
+        }
+
         /* ============================================================
            ⏱️ LÓGICA DEL MÓDULO HORAS EXTRA
            ============================================================ */
 
-        let heScrollY = 0;
+let heScrollY = 0;
 
         function openHorasExtra() {
             heScrollY = window.scrollY || window.pageYOffset;
             document.body.style.top = (-heScrollY) + 'px';
+            document.documentElement.classList.add('he-lock');
             document.body.classList.add('he-lock');
 
             document.getElementById('heOverlay').classList.add('active');
@@ -752,11 +789,19 @@
 
         function closeHorasExtra() {
             document.getElementById('heOverlay').classList.remove('active');
+            document.documentElement.classList.remove('he-lock');
             document.body.classList.remove('he-lock');
             document.body.style.top = '';
             window.scrollTo(0, heScrollY);
         }
 
+        // Evita que arrastrar el fondo oscuro del modal (fuera de la tarjeta)
+        // mueva/arrastre la página en mobile. El scroll DENTRO de .he-modal
+        // sigue funcionando normalmente porque el listener solo actúa si el
+        // toque empezó directamente sobre el overlay (el fondo), no sobre el modal.
+        document.getElementById('heOverlay').addEventListener('touchmove', function(e) {
+            if (e.target === this) e.preventDefault();
+        }, { passive: false });
         function toggleHeTipo() {
             const tipo = document.querySelector('input[name="heTipo"]:checked').value;
             document.getElementById('heSeccionVuelo').classList.toggle('active', tipo === 'vuelo');
